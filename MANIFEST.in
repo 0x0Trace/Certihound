@@ -1,0 +1,7 @@
+include LICENSE
+include README.md
+include certihound/py.typed
+recursive-include certihound *.py
+recursive-exclude tests *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[cod]
