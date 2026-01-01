@@ -54,10 +54,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/certihound/certihound"
-Documentation = "https://github.com/certihound/certihound#readme"
-Repository = "https://github.com/certihound/certihound.git"
-Issues = "https://github.com/certihound/certihound/issues"
+Homepage = "https://github.com/0x0Trace/Certihound"
+Documentation = "https://github.com/0x0Trace/Certihound#readme"
+Repository = "https://github.com/0x0Trace/Certihound.git"
+Issues = "https://github.com/0x0Trace/Certihound/issues"
+
 
 [project.scripts]
 certihound = "certihound.cli:main"
