@@ -221,7 +221,10 @@ RETURN p
 
 ## NetExec Integration
 
-CertiHound integrates with [NetExec](https://github.com/Pennyw0rth/NetExec) for ADCS enumeration:
+CertiHound integrates with [NetExec](https://github.com/Pennyw0rth/NetExec) for ADCS enumeration.
+
+> **Status:** Integration PR pending review at [Pennyw0rth/NetExec#1054](https://github.com/Pennyw0rth/NetExec/pull/1054)  
+> **Try it now:** Use the [`feature/adcs-collection`](https://github.com/0x0Trace/NetExec/tree/feature/adcs-collection) branch from [0x0Trace/NetExec](https://github.com/0x0Trace/NetExec)
 
 ```bash
 # ADCS only collection
