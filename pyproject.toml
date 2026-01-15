@@ -1,6 +1,6 @@
 [project]
 name = "certihound"
-version = "0.1.0"
+version = "0.1.1"
 description = "Linux-native AD CS collector library for BloodHound CE - enumerate ADCS and export to BloodHound format"
 readme = "README.md"
 license = {text = "MIT"}

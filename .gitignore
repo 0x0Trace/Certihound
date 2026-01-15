@@ -136,8 +136,8 @@ cython_debug/
 *.swo
 *~
 
-# Project specific
-output/
+# Project specific - output directory for generated BloodHound files
+/output/
 *.zip
 *.json
 !tests/fixtures/*.json
