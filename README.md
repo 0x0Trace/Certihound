@@ -19,7 +19,7 @@ pip install certihound
 Or from source:
 
 ```bash
-git clone https://github.com/yourusername/certihound.git
+git clone https://github.com/0x0Trace/certihound.git
 cd certihound
 pip install -e .
 ```
