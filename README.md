@@ -16,9 +16,6 @@
   <a href="https://github.com/0x0Trace/Certihound/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/0x0Trace/Certihound?style=flat-square" alt="License">
   </a>
-  <a href="https://github.com/0x0Trace/Certihound/stargazers">
-    <img src="https://img.shields.io/github/stars/0x0Trace/Certihound?style=flat-square" alt="Stars">
-  </a>
 </p>
 
 <p align="center">
