@@ -38,14 +38,14 @@
 
 ### ESC1 - Enrollee Supplies Subject Detection
 <p align="center">
-  <img src="docs/images/esc1-bloodhound.png" alt="ESC1 Detection in BloodHound" width="900">
+  <img src="docs/images/esc1-bloodhound.PNG" alt="ESC1 Detection in BloodHound" width="900">
 </p>
 
 *CertiHound detects ESC1 vulnerable templates and creates enrollment edges to Enterprise CAs, enabling attack path analysis in BloodHound CE.*
 
 ### ESC4 - Template ACL Abuse Detection
 <p align="center">
-  <img src="docs/images/esc4-bloodhound.png" alt="ESC4 Detection in BloodHound" width="900">
+  <img src="docs/images/esc4-bloodhound.PNG" alt="ESC4 Detection in BloodHound" width="900">
 </p>
 
 *WriteDacl, WriteOwner, and other dangerous permissions on certificate templates are identified and mapped as attack edges.*
