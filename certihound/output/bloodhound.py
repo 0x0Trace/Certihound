@@ -9,13 +9,21 @@ from .edges import EdgeGenerator
 from ..acl.parser import SecurityDescriptorParser
 from ..detection import (
     detect_esc1,
+    detect_esc2,
     detect_esc3_agent,
     detect_esc3_target,
     detect_esc4,
     detect_esc6,
+    detect_esc7,
+    detect_esc8,
     detect_esc9,
     detect_esc10,
+    detect_esc11,
     detect_esc13,
+    detect_esc14,
+    detect_esc15,
+    detect_esc16,
+    detect_esc17,
 )
 from ..detection.esc13 import enumerate_issuance_policies
 from ..acl.rights import is_low_privileged_sid
@@ -106,6 +114,51 @@ class BloodHoundOutput:
 
     def detect_vulnerabilities(self) -> None:
         """Run all vulnerability detection."""
+        # CA-level detections (not per-template)
+        for ca in self.enterprise_cas:
+            # ESC7 - Dangerous CA Permissions
+            if ca.security_descriptor_raw:
+                ca_sd_parser = SecurityDescriptorParser(ca.security_descriptor_raw)
+                esc7_result = detect_esc7(ca, ca_sd_parser, self.domain_sid)
+                if esc7_result:
+                    self.vulnerabilities.append({
+                        "type": "ESC7",
+                        "ca": ca.cn,
+                        "principals": [p["sid"] for p in esc7_result.vulnerable_principals],
+                        "reasons": esc7_result.reasons,
+                    })
+                    for vuln_principal in esc7_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc7_edge(
+                            vuln_principal["sid"], ca
+                        )
+                        self.edge_generator.edges.append(edge)
+
+            # ESC8 - NTLM Relay to Web Enrollment
+            esc8_result = detect_esc8(ca)
+            if esc8_result:
+                self.vulnerabilities.append({
+                    "type": "ESC8",
+                    "ca": ca.cn,
+                    "web_enrollment_url": esc8_result.web_enrollment_url,
+                    "reasons": esc8_result.reasons,
+                })
+                edge = self.edge_generator.generate_adcsesc8_edge(
+                    ca, esc8_result.web_enrollment_url
+                )
+                self.edge_generator.edges.append(edge)
+
+            # ESC11 - NTLM Relay to RPC Endpoints
+            esc11_result = detect_esc11(ca)
+            if esc11_result:
+                self.vulnerabilities.append({
+                    "type": "ESC11",
+                    "ca": ca.cn,
+                    "reasons": esc11_result.reasons,
+                })
+                edge = self.edge_generator.generate_adcsesc11_edge(ca)
+                self.edge_generator.edges.append(edge)
+
+        # Template-level detections
         for template in self.templates:
             for ca in self.enterprise_cas:
                 # ESC1
@@ -124,6 +177,24 @@ class BloodHoundOutput:
                     # Generate edges
                     for principal in result.vulnerable_principals:
                         edge = self.edge_generator.generate_adcsesc1_edge(
+                            principal, template, ca
+                        )
+                        self.edge_generator.edges.append(edge)
+
+                # ESC2 - Any Purpose / No EKU
+                esc2_result = detect_esc2(template, ca, self.domain_sid)
+                if esc2_result:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append("ESC2")
+                    self.vulnerabilities.append({
+                        "type": "ESC2",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc2_result.vulnerable_principals,
+                        "reasons": esc2_result.reasons,
+                    })
+                    for principal in esc2_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc2_edge(
                             principal, template, ca
                         )
                         self.edge_generator.edges.append(edge)
@@ -180,6 +251,42 @@ class BloodHoundOutput:
                         "reasons": esc6_result.reasons,
                     })
 
+                # ESC9
+                esc9_results = detect_esc9(template, ca, self.domain_sid)
+                for esc9_result in esc9_results:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append(f"ESC9{esc9_result.variant}")
+                    self.vulnerabilities.append({
+                        "type": f"ESC9{esc9_result.variant}",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc9_result.vulnerable_principals,
+                        "reasons": esc9_result.reasons,
+                    })
+                    for principal in esc9_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc9_edge(
+                            principal, template, ca, esc9_result.variant
+                        )
+                        self.edge_generator.edges.append(edge)
+
+                # ESC10
+                esc10_results = detect_esc10(template, ca, self.domain_sid)
+                for esc10_result in esc10_results:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append(f"ESC10{esc10_result.variant}")
+                    self.vulnerabilities.append({
+                        "type": f"ESC10{esc10_result.variant}",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc10_result.vulnerable_principals,
+                        "reasons": esc10_result.reasons,
+                    })
+                    for principal in esc10_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc10_edge(
+                            principal, template, ca, esc10_result.variant
+                        )
+                        self.edge_generator.edges.append(edge)
+
                 # ESC13
                 if self.issuance_policies:
                     esc13_result = detect_esc13(
@@ -197,6 +304,82 @@ class BloodHoundOutput:
                             "linked_group": esc13_result.linked_group_dn,
                             "reasons": esc13_result.reasons,
                         })
+
+                # ESC14 - Weak Explicit Certificate Mappings
+                esc14_result = detect_esc14(template, ca, self.domain_sid)
+                if esc14_result:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append("ESC14")
+                    self.vulnerabilities.append({
+                        "type": "ESC14",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc14_result.vulnerable_principals,
+                        "reasons": esc14_result.reasons,
+                    })
+                    for principal in esc14_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc14_edge(
+                            principal, template, ca
+                        )
+                        self.edge_generator.edges.append(edge)
+
+                # ESC15 - EKUwu (Schema V1 Application Policy abuse)
+                if template.security_descriptor_raw:
+                    sd_parser = SecurityDescriptorParser(template.security_descriptor_raw)
+                    esc15_result = detect_esc15(template, ca, sd_parser, self.domain_sid)
+                    if esc15_result:
+                        template.is_vulnerable = True
+                        template.vulnerabilities.append("ESC15")
+                        self.vulnerabilities.append({
+                            "type": "ESC15",
+                            "template": template.cn,
+                            "ca": ca.cn,
+                            "principals": [
+                                p["sid"] for p in esc15_result.vulnerable_principals
+                            ],
+                            "reasons": esc15_result.reasons,
+                        })
+                        for vuln_principal in esc15_result.vulnerable_principals:
+                            edge = self.edge_generator.generate_adcsesc15_edge(
+                                vuln_principal["sid"], template, ca
+                            )
+                            self.edge_generator.edges.append(edge)
+
+                # ESC16 - Security Extension Disabled on CA
+                esc16_result = detect_esc16(template, ca, self.domain_sid)
+                if esc16_result:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append("ESC16")
+                    self.vulnerabilities.append({
+                        "type": "ESC16",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc16_result.vulnerable_principals,
+                        "reasons": esc16_result.reasons,
+                    })
+                    for principal in esc16_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc16_edge(
+                            principal, template, ca
+                        )
+                        self.edge_generator.edges.append(edge)
+
+                # ESC17 - Server Authentication + Enrollee Supplies Subject (TLS MITM)
+                esc17_result = detect_esc17(template, ca, self.domain_sid)
+                if esc17_result:
+                    template.is_vulnerable = True
+                    template.vulnerabilities.append("ESC17")
+                    self.vulnerabilities.append({
+                        "type": "ESC17",
+                        "template": template.cn,
+                        "ca": ca.cn,
+                        "principals": esc17_result.vulnerable_principals,
+                        "reasons": esc17_result.reasons,
+                    })
+                    for principal in esc17_result.vulnerable_principals:
+                        edge = self.edge_generator.generate_adcsesc17_edge(
+                            principal, template, ca
+                        )
+                        self.edge_generator.edges.append(edge)
 
     def generate_relationship_edges(self) -> None:
         """Generate non-traversable relationship edges."""

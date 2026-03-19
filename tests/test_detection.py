@@ -4,12 +4,20 @@ import pytest
 from certihound.objects.certtemplate import CertTemplate, EnrollmentFlags
 from certihound.objects.enterpriseca import EnterpriseCA
 from certihound.detection.esc1 import detect_esc1, check_esc1_conditions
+from certihound.detection.esc2 import detect_esc2
 from certihound.detection.esc3 import detect_esc3_agent, detect_esc3_target, find_esc3_chains
 from certihound.detection.esc4 import detect_esc4
 from certihound.detection.esc6 import detect_esc6
+from certihound.detection.esc7 import detect_esc7
+from certihound.detection.esc8 import detect_esc8
 from certihound.detection.esc9 import detect_esc9
 from certihound.detection.esc10 import detect_esc10
+from certihound.detection.esc11 import detect_esc11
 from certihound.detection.esc13 import detect_esc13
+from certihound.detection.esc14 import detect_esc14
+from certihound.detection.esc15 import detect_esc15
+from certihound.detection.esc16 import detect_esc16
+from certihound.detection.esc17 import detect_esc17
 from certihound.detection.goldencert import detect_goldencert, get_goldencert_edge
 from certihound.acl.rights import ADCSRights
 from certihound.utils.crypto import OID
@@ -746,13 +754,23 @@ class TestESC9Detection:
 
 
 class MockSecurityDescriptorParser:
-    """Mock SecurityDescriptorParser for testing ESC4."""
+    """Mock SecurityDescriptorParser for testing ESC4, ESC7, ESC15."""
 
-    def __init__(self, rights: list[ADCSRights]):
+    def __init__(self, rights: list[ADCSRights], aces: list | None = None):
         self._rights = rights
+        self._aces = aces or []
 
     def get_enrollment_rights(self) -> list[ADCSRights]:
         return self._rights
+
+    def parse(self):
+        """Return a mock security descriptor with DACL."""
+        from certihound.acl.parser import SecurityDescriptor, ACL
+        sd = SecurityDescriptor()
+        dacl = ACL()
+        dacl.aces = self._aces
+        sd.dacl = dacl
+        return sd
 
 
 class TestESC4Detection:
@@ -1433,3 +1451,671 @@ class TestGoldenCertDetection:
 
         assert "cadistinguishedname" in edge["EdgeProps"]
         assert "CN=TestCA" in edge["EdgeProps"]["cadistinguishedname"]
+
+
+class TestESC2Detection:
+    """Tests for ESC2 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_template(self, **kwargs) -> CertTemplate:
+        defaults = {
+            "cn": "TestTemplate",
+            "name": "TestTemplate",
+            "display_name": "Test Template",
+            "object_guid": "12345678-1234-1234-1234-123456789012",
+            "distinguished_name": "CN=TestTemplate,CN=Certificate Templates",
+            "domain": "CORP.LOCAL",
+            "domain_sid": self.DOMAIN_SID,
+            "certificate_name_flag": 0,
+            "enrollment_flag": 0,
+            "ra_signature": 0,
+            "ekus": [],
+            "enrollment_principals": [],
+        }
+        defaults.update(kwargs)
+        return CertTemplate(**defaults)
+
+    def create_ca(self, templates=None) -> EnterpriseCA:
+        return EnterpriseCA(
+            cn="TestCA", name="TestCA",
+            object_guid="87654321-4321-4321-4321-210987654321",
+            distinguished_name="CN=TestCA",
+            domain="CORP.LOCAL", domain_sid=self.DOMAIN_SID,
+            certificate_templates=templates or ["TestTemplate"],
+        )
+
+    def test_esc2_any_purpose_eku(self):
+        """Test ESC2 with Any Purpose EKU."""
+        template = self.create_template(
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "Any Purpose" in result.reasons[0]
+
+    def test_esc2_no_eku(self):
+        """Test ESC2 with no EKUs."""
+        template = self.create_template(
+            ekus=[],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is not None
+        assert "No EKUs" in result.reasons[0]
+
+    def test_esc2_not_triggered_with_enrollee_supplies_subject(self):
+        """ESC2 should not trigger when enrollee supplies subject (that's ESC1)."""
+        template = self.create_template(
+            certificate_name_flag=1,  # ENROLLEE_SUPPLIES_SUBJECT
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc2_not_triggered_with_specific_eku(self):
+        """ESC2 should not trigger with only specific EKUs."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc2_manager_approval_blocks(self):
+        """ESC2 should not trigger with manager approval."""
+        template = self.create_template(
+            enrollment_flag=2,  # PEND_ALL_REQUESTS
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc2_no_low_priv_enrollment(self):
+        """ESC2 should not trigger without low-priv enrollment."""
+        template = self.create_template(
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-512"],  # Domain Admins
+        )
+        ca = self.create_ca()
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc2_template_not_published(self):
+        """ESC2 requires template published to CA."""
+        template = self.create_template(
+            cn="NotPublished",
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(templates=["OtherTemplate"])
+        result = detect_esc2(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+
+class TestESC7Detection:
+    """Tests for ESC7 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_ca(self, **kwargs) -> EnterpriseCA:
+        defaults = {
+            "cn": "TestCA", "name": "TestCA",
+            "object_guid": "87654321-4321-4321-4321-210987654321",
+            "distinguished_name": "CN=TestCA",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_templates": ["TestTemplate"],
+        }
+        defaults.update(kwargs)
+        return EnterpriseCA(**defaults)
+
+    def _make_ace(self, sid, access_mask, object_type=None):
+        """Create a mock ACE object."""
+        from certihound.acl.parser import ACE
+        from certihound.acl.rights import AceType
+        ace_type = AceType.ACCESS_ALLOWED_OBJECT if object_type else AceType.ACCESS_ALLOWED
+        return ACE(
+            ace_type=ace_type, ace_flags=0, access_mask=access_mask,
+            sid=sid, object_type=object_type,
+        )
+
+    def test_esc7_manage_ca(self):
+        """Test ESC7 with ManageCA permission."""
+        from certihound.acl.rights import AccessMask
+        from certihound.detection.esc7 import MANAGE_CA_GUID
+        ca = self.create_ca()
+        ace = self._make_ace(
+            f"{self.DOMAIN_SID}-513",
+            int(AccessMask.DS_CONTROL_ACCESS),
+            MANAGE_CA_GUID,
+        )
+        sd_parser = MockSecurityDescriptorParser([], aces=[ace])
+        result = detect_esc7(ca, sd_parser, self.DOMAIN_SID)
+        assert result is not None
+        assert any("ManageCA" in p["rights"] for p in result.vulnerable_principals)
+
+    def test_esc7_manage_certificates(self):
+        """Test ESC7 with ManageCertificates permission."""
+        from certihound.acl.rights import AccessMask
+        from certihound.detection.esc7 import MANAGE_CERTIFICATES_GUID
+        ca = self.create_ca()
+        ace = self._make_ace(
+            f"{self.DOMAIN_SID}-513",
+            int(AccessMask.DS_CONTROL_ACCESS),
+            MANAGE_CERTIFICATES_GUID,
+        )
+        sd_parser = MockSecurityDescriptorParser([], aces=[ace])
+        result = detect_esc7(ca, sd_parser, self.DOMAIN_SID)
+        assert result is not None
+        assert any("ManageCertificates" in p["rights"] for p in result.vulnerable_principals)
+
+    def test_esc7_high_priv_ignored(self):
+        """Test ESC7 ignores high-privileged principals."""
+        from certihound.acl.rights import AccessMask
+        from certihound.detection.esc7 import MANAGE_CA_GUID
+        ca = self.create_ca()
+        ace = self._make_ace(
+            f"{self.DOMAIN_SID}-512",  # Domain Admins
+            int(AccessMask.DS_CONTROL_ACCESS),
+            MANAGE_CA_GUID,
+        )
+        sd_parser = MockSecurityDescriptorParser([], aces=[ace])
+        result = detect_esc7(ca, sd_parser, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc7_write_dacl(self):
+        """Test ESC7 with WriteDacl on CA."""
+        from certihound.acl.rights import AccessMask
+        ca = self.create_ca()
+        ace = self._make_ace(
+            f"{self.DOMAIN_SID}-513",
+            int(AccessMask.WRITE_DAC),
+        )
+        sd_parser = MockSecurityDescriptorParser([], aces=[ace])
+        result = detect_esc7(ca, sd_parser, self.DOMAIN_SID)
+        assert result is not None
+        assert any("WriteDacl" in p["rights"] for p in result.vulnerable_principals)
+
+
+class TestESC8Detection:
+    """Tests for ESC8 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_ca(self, **kwargs) -> EnterpriseCA:
+        defaults = {
+            "cn": "TestCA", "name": "TestCA",
+            "object_guid": "87654321-4321-4321-4321-210987654321",
+            "distinguished_name": "CN=TestCA",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_templates": ["TestTemplate"],
+            "dns_hostname": "ca.corp.local",
+        }
+        defaults.update(kwargs)
+        return EnterpriseCA(**defaults)
+
+    def test_esc8_web_enrollment_enabled(self):
+        """Test ESC8 with web enrollment enabled."""
+        ca = self.create_ca(web_enrollment_enabled=True)
+        result = detect_esc8(ca)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "web enrollment" in result.reasons[0].lower()
+
+    def test_esc8_web_enrollment_disabled(self):
+        """Test ESC8 not triggered when web enrollment disabled."""
+        ca = self.create_ca(web_enrollment_enabled=False)
+        result = detect_esc8(ca)
+        assert result is None
+
+    def test_esc8_with_endpoints(self):
+        """Test ESC8 with enrollment endpoints."""
+        ca = self.create_ca(
+            web_enrollment_enabled=True,
+            enrollment_endpoints=["https://ca.corp.local/certsrv/"],
+        )
+        result = detect_esc8(ca)
+        assert result is not None
+        assert result.web_enrollment_url == "https://ca.corp.local/certsrv/"
+
+
+class TestESC11Detection:
+    """Tests for ESC11 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_ca(self, **kwargs) -> EnterpriseCA:
+        defaults = {
+            "cn": "TestCA", "name": "TestCA",
+            "object_guid": "87654321-4321-4321-4321-210987654321",
+            "distinguished_name": "CN=TestCA",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_templates": ["TestTemplate"],
+            "flags": 0,
+        }
+        defaults.update(kwargs)
+        return EnterpriseCA(**defaults)
+
+    def test_esc11_no_encryption_enforcement(self):
+        """Test ESC11 when RPC encryption not enforced."""
+        ca = self.create_ca(flags=0)  # No IF_ENFORCEENCRYPTICERTREQUEST
+        result = detect_esc11(ca)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "IF_ENFORCEENCRYPTICERTREQUEST" in result.reasons[0]
+
+    def test_esc11_encryption_enforced(self):
+        """Test ESC11 not triggered when encryption enforced."""
+        ca = self.create_ca(flags=0x200)  # IF_ENFORCEENCRYPTICERTREQUEST set
+        result = detect_esc11(ca)
+        assert result is None
+
+    def test_esc11_other_flags_set(self):
+        """Test ESC11 with other flags but not encryption enforcement."""
+        ca = self.create_ca(flags=0x100)  # Some other flag, not 0x200
+        result = detect_esc11(ca)
+        assert result is not None
+
+
+class TestESC14Detection:
+    """Tests for ESC14 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_template(self, **kwargs) -> CertTemplate:
+        defaults = {
+            "cn": "TestTemplate", "name": "TestTemplate",
+            "object_guid": "12345678-1234-1234-1234-123456789012",
+            "distinguished_name": "CN=TestTemplate",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_name_flag": 0, "enrollment_flag": 0,
+            "ra_signature": 0, "ekus": [], "enrollment_principals": [],
+        }
+        defaults.update(kwargs)
+        return CertTemplate(**defaults)
+
+    def create_ca(self, templates=None) -> EnterpriseCA:
+        return EnterpriseCA(
+            cn="TestCA", name="TestCA",
+            object_guid="87654321-4321-4321-4321-210987654321",
+            distinguished_name="CN=TestCA",
+            domain="CORP.LOCAL", domain_sid=self.DOMAIN_SID,
+            certificate_templates=templates or ["TestTemplate"],
+        )
+
+    def test_esc14_vulnerable(self):
+        """Test ESC14 detection with weak binding."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc14(template, ca, self.DOMAIN_SID, strong_cert_binding_enforced=False)
+        assert result is not None
+        assert result.vulnerable is True
+
+    def test_esc14_strong_binding_blocks(self):
+        """Test ESC14 blocked by strong binding."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc14(template, ca, self.DOMAIN_SID, strong_cert_binding_enforced=True)
+        assert result is None
+
+    def test_esc14_no_auth_eku(self):
+        """Test ESC14 requires auth EKU."""
+        template = self.create_template(
+            ekus=["1.2.3.4.5"],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc14(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc14_template_not_published(self):
+        """Test ESC14 requires template published to CA."""
+        template = self.create_template(
+            cn="NotPublished",
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(templates=["OtherTemplate"])
+        result = detect_esc14(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+
+class TestESC15Detection:
+    """Tests for ESC15 (EKUwu) vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_template(self, **kwargs) -> CertTemplate:
+        defaults = {
+            "cn": "TestTemplate", "name": "TestTemplate",
+            "object_guid": "12345678-1234-1234-1234-123456789012",
+            "distinguished_name": "CN=TestTemplate",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_name_flag": 0, "enrollment_flag": 0,
+            "ra_signature": 0, "ekus": [], "enrollment_principals": [],
+            "schema_version": 1,
+        }
+        defaults.update(kwargs)
+        return CertTemplate(**defaults)
+
+    def create_ca(self, templates=None) -> EnterpriseCA:
+        return EnterpriseCA(
+            cn="TestCA", name="TestCA",
+            object_guid="87654321-4321-4321-4321-210987654321",
+            distinguished_name="CN=TestCA",
+            domain="CORP.LOCAL", domain_sid=self.DOMAIN_SID,
+            certificate_templates=templates or ["TestTemplate"],
+        )
+
+    def test_esc15_schema_v1_write_property(self):
+        """Test ESC15 on Schema V1 template with write property."""
+        template = self.create_template(schema_version=1)
+        ca = self.create_ca()
+        sd_parser = MockSecurityDescriptorParser([
+            ADCSRights(
+                sid=f"{self.DOMAIN_SID}-513",
+                write_property=True,
+            )
+        ])
+        result = detect_esc15(template, ca, sd_parser, self.DOMAIN_SID)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "Schema Version 1" in result.reasons[0]
+
+    def test_esc15_schema_v2_not_vulnerable(self):
+        """Test ESC15 not triggered on Schema V2 templates."""
+        template = self.create_template(schema_version=2)
+        ca = self.create_ca()
+        sd_parser = MockSecurityDescriptorParser([
+            ADCSRights(
+                sid=f"{self.DOMAIN_SID}-513",
+                write_property=True,
+            )
+        ])
+        result = detect_esc15(template, ca, sd_parser, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc15_no_write_property(self):
+        """Test ESC15 requires write property."""
+        template = self.create_template(schema_version=1)
+        ca = self.create_ca()
+        sd_parser = MockSecurityDescriptorParser([
+            ADCSRights(
+                sid=f"{self.DOMAIN_SID}-513",
+                enroll=True,
+            )
+        ])
+        result = detect_esc15(template, ca, sd_parser, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc15_manager_approval_blocks(self):
+        """Test ESC15 blocked by manager approval."""
+        template = self.create_template(
+            schema_version=1,
+            enrollment_flag=2,  # PEND_ALL_REQUESTS
+        )
+        ca = self.create_ca()
+        sd_parser = MockSecurityDescriptorParser([
+            ADCSRights(
+                sid=f"{self.DOMAIN_SID}-513",
+                write_property=True,
+            )
+        ])
+        result = detect_esc15(template, ca, sd_parser, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc15_high_priv_ignored(self):
+        """Test ESC15 ignores high-privileged principals."""
+        template = self.create_template(schema_version=1)
+        ca = self.create_ca()
+        sd_parser = MockSecurityDescriptorParser([
+            ADCSRights(
+                sid=f"{self.DOMAIN_SID}-512",  # Domain Admins
+                write_property=True,
+            )
+        ])
+        result = detect_esc15(template, ca, sd_parser, self.DOMAIN_SID)
+        assert result is None
+
+
+class TestESC16Detection:
+    """Tests for ESC16 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_template(self, **kwargs) -> CertTemplate:
+        defaults = {
+            "cn": "TestTemplate", "name": "TestTemplate",
+            "object_guid": "12345678-1234-1234-1234-123456789012",
+            "distinguished_name": "CN=TestTemplate",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_name_flag": 0, "enrollment_flag": 0,
+            "ra_signature": 0, "ekus": [], "enrollment_principals": [],
+        }
+        defaults.update(kwargs)
+        return CertTemplate(**defaults)
+
+    def create_ca(self, templates=None, **kwargs) -> EnterpriseCA:
+        defaults = {
+            "cn": "TestCA", "name": "TestCA",
+            "object_guid": "87654321-4321-4321-4321-210987654321",
+            "distinguished_name": "CN=TestCA",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_templates": templates or ["TestTemplate"],
+        }
+        defaults.update(kwargs)
+        return EnterpriseCA(**defaults)
+
+    def test_esc16_security_extension_disabled(self):
+        """Test ESC16 when CA has security extension disabled."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(is_security_extension_disabled=True)
+        result = detect_esc16(template, ca, self.DOMAIN_SID)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "szOID_NTDS_CA_SECURITY_EXT" in result.reasons[0]
+
+    def test_esc16_security_extension_enabled(self):
+        """Test ESC16 not triggered when security extension enabled."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(is_security_extension_disabled=False)
+        result = detect_esc16(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc16_strong_binding_blocks(self):
+        """Test ESC16 blocked by strong binding."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(is_security_extension_disabled=True)
+        result = detect_esc16(template, ca, self.DOMAIN_SID, strong_cert_binding_enforced=True)
+        assert result is None
+
+    def test_esc16_no_auth_eku(self):
+        """Test ESC16 requires auth EKU."""
+        template = self.create_template(
+            ekus=["1.2.3.4.5"],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(is_security_extension_disabled=True)
+        result = detect_esc16(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc16_no_low_priv_enrollment(self):
+        """Test ESC16 requires low-priv enrollment."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-512"],  # Domain Admins
+        )
+        ca = self.create_ca(is_security_extension_disabled=True)
+        result = detect_esc16(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc16_template_not_published(self):
+        """Test ESC16 requires template published to CA."""
+        template = self.create_template(
+            cn="NotPublished",
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(
+            templates=["OtherTemplate"],
+            is_security_extension_disabled=True,
+        )
+        result = detect_esc16(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+
+class TestESC17Detection:
+    """Tests for ESC17 vulnerability detection."""
+
+    DOMAIN_SID = "S-1-5-21-1234567890-1234567890-1234567890"
+
+    def create_template(self, **kwargs) -> CertTemplate:
+        defaults = {
+            "cn": "TestTemplate", "name": "TestTemplate",
+            "object_guid": "12345678-1234-1234-1234-123456789012",
+            "distinguished_name": "CN=TestTemplate",
+            "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
+            "certificate_name_flag": 0, "enrollment_flag": 0,
+            "ra_signature": 0, "ekus": [], "enrollment_principals": [],
+        }
+        defaults.update(kwargs)
+        return CertTemplate(**defaults)
+
+    def create_ca(self, templates=None) -> EnterpriseCA:
+        return EnterpriseCA(
+            cn="TestCA", name="TestCA",
+            object_guid="87654321-4321-4321-4321-210987654321",
+            distinguished_name="CN=TestCA",
+            domain="CORP.LOCAL", domain_sid=self.DOMAIN_SID,
+            certificate_templates=templates or ["TestTemplate"],
+        )
+
+    def test_esc17_server_auth_eku(self):
+        """Test ESC17 with Server Authentication EKU + enrollee supplies subject."""
+        template = self.create_template(
+            certificate_name_flag=1,  # ENROLLEE_SUPPLIES_SUBJECT
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is not None
+        assert result.vulnerable is True
+        assert "Server Authentication" in result.reasons[1]
+        assert "TLS MITM" in result.reasons[-1]
+
+    def test_esc17_no_eku(self):
+        """Test ESC17 with no EKUs (allows any purpose)."""
+        template = self.create_template(
+            certificate_name_flag=1,  # ENROLLEE_SUPPLIES_SUBJECT
+            ekus=[],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is not None
+        assert "No EKUs" in result.reasons[1]
+
+    def test_esc17_any_purpose_eku(self):
+        """Test ESC17 with Any Purpose EKU."""
+        template = self.create_template(
+            certificate_name_flag=1,  # ENROLLEE_SUPPLIES_SUBJECT
+            ekus=[OID.ANY_PURPOSE],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is not None
+
+    def test_esc17_no_enrollee_supplies_subject(self):
+        """Test ESC17 requires enrollee supplies subject."""
+        template = self.create_template(
+            certificate_name_flag=0,  # No ENROLLEE_SUPPLIES_SUBJECT
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc17_client_auth_only_not_triggered(self):
+        """Test ESC17 not triggered with only Client Auth EKU (that's ESC1)."""
+        template = self.create_template(
+            certificate_name_flag=1,
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc17_manager_approval_blocks(self):
+        """Test ESC17 blocked by manager approval."""
+        template = self.create_template(
+            certificate_name_flag=1,
+            enrollment_flag=2,  # PEND_ALL_REQUESTS
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc17_signature_required_blocks(self):
+        """Test ESC17 blocked by signature requirement."""
+        template = self.create_template(
+            certificate_name_flag=1,
+            ra_signature=1,  # Requires signature
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc17_no_low_priv_enrollment(self):
+        """Test ESC17 requires low-priv enrollment."""
+        template = self.create_template(
+            certificate_name_flag=1,
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-512"],  # Domain Admins
+        )
+        ca = self.create_ca()
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc17_template_not_published(self):
+        """Test ESC17 requires template published to CA."""
+        template = self.create_template(
+            cn="NotPublished",
+            certificate_name_flag=1,
+            ekus=[OID.SERVER_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca(templates=["OtherTemplate"])
+        result = detect_esc17(template, ca, self.DOMAIN_SID)
+        assert result is None

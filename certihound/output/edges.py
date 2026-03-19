@@ -320,6 +320,92 @@ class EdgeGenerator:
             },
         }
 
+    def generate_adcsesc2_edge(
+        self,
+        principal_id: str,
+        template: "CertTemplate",
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC2 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC2",
+            "EdgeProps": {
+                "isacl": False,
+                "certtemplate": template.distinguished_name,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
+    def generate_adcsesc5_edge(
+        self,
+        principal_id: str,
+        object_dn: str,
+        object_type: str,
+    ) -> dict:
+        """Generate ADCSESC5 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC5",
+            "EdgeProps": {
+                "isacl": False,
+                "pkiobject": object_dn,
+                "pkiobjecttype": object_type,
+            },
+        }
+
+    def generate_adcsesc7_edge(
+        self,
+        principal_id: str,
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC7 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC7",
+            "EdgeProps": {
+                "isacl": False,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
+    def generate_adcsesc8_edge(
+        self,
+        ca: "EnterpriseCA",
+        web_url: str,
+    ) -> dict:
+        """Generate ADCSESC8 edge (CA -> Domain)."""
+        ca_id = self._normalize_guid(ca.object_guid)
+        return {
+            "StartNode": ca_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC8",
+            "EdgeProps": {
+                "isacl": False,
+                "enterpriseca": ca.distinguished_name,
+                "webenrollmenturl": web_url,
+            },
+        }
+
+    def generate_adcsesc11_edge(
+        self,
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC11 edge (CA -> Domain)."""
+        ca_id = self._normalize_guid(ca.object_guid)
+        return {
+            "StartNode": ca_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC11",
+            "EdgeProps": {
+                "isacl": False,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
     def generate_adcsesc13_edge(
         self,
         principal_id: str,
@@ -339,6 +425,78 @@ class EdgeGenerator:
                 "enterpriseca": ca.distinguished_name,
                 "issuancepolicyoid": issuance_policy_oid,
                 "linkedgroup": linked_group_dn,
+            },
+        }
+
+    def generate_adcsesc14_edge(
+        self,
+        principal_id: str,
+        template: "CertTemplate",
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC14 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC14",
+            "EdgeProps": {
+                "isacl": False,
+                "certtemplate": template.distinguished_name,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
+    def generate_adcsesc15_edge(
+        self,
+        principal_id: str,
+        template: "CertTemplate",
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC15 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC15",
+            "EdgeProps": {
+                "isacl": False,
+                "certtemplate": template.distinguished_name,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
+    def generate_adcsesc16_edge(
+        self,
+        principal_id: str,
+        template: "CertTemplate",
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC16 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC16",
+            "EdgeProps": {
+                "isacl": False,
+                "certtemplate": template.distinguished_name,
+                "enterpriseca": ca.distinguished_name,
+            },
+        }
+
+    def generate_adcsesc17_edge(
+        self,
+        principal_id: str,
+        template: "CertTemplate",
+        ca: "EnterpriseCA",
+    ) -> dict:
+        """Generate ADCSESC17 edge (Principal -> Domain)."""
+        return {
+            "StartNode": principal_id,
+            "EndNode": self.domain_sid,
+            "EdgeType": "ADCSESC17",
+            "EdgeProps": {
+                "isacl": False,
+                "certtemplate": template.distinguished_name,
+                "enterpriseca": ca.distinguished_name,
             },
         }
 

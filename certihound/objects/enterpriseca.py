@@ -34,6 +34,11 @@ class EnterpriseCA(BaseModel):
 
     # Registry flags (collected separately if available)
     is_user_specifies_san_enabled: bool = False  # EDITF_ATTRIBUTESUBJECTALTNAME2
+    is_security_extension_disabled: bool = False  # ESC16: szOID_NTDS_CA_SECURITY_EXT disabled
+
+    # Web enrollment
+    web_enrollment_enabled: bool = False  # ESC8: HTTP enrollment interface
+    enrollment_endpoints: list[str] = Field(default_factory=list)  # msPKI-Enrollment-Servers
 
     # ACL data
     aces: list[dict] = Field(default_factory=list)
@@ -43,6 +48,13 @@ class EnterpriseCA(BaseModel):
     hosting_computer_sid: str = ""
 
     model_config = {"arbitrary_types_allowed": True}
+
+    @computed_field
+    @property
+    def enforce_encrypt_rpc(self) -> bool:
+        """Check if IF_ENFORCEENCRYPTICERTREQUEST flag is set (ESC11 mitigation)."""
+        IF_ENFORCEENCRYPTICERTREQUEST = 0x00000200
+        return bool(self.flags & IF_ENFORCEENCRYPTICERTREQUEST)
 
     @computed_field
     @property
@@ -73,6 +85,18 @@ class EnterpriseCA(BaseModel):
     @classmethod
     def from_ldap_entry(cls, entry: dict, domain: str, domain_sid: str) -> "EnterpriseCA":
         """Create EnterpriseCA from parsed LDAP entry."""
+        # Parse enrollment servers for web enrollment detection
+        enrollment_servers = entry.get("msPKI-Enrollment-Servers", [])
+        if isinstance(enrollment_servers, str):
+            enrollment_servers = [enrollment_servers]
+        enrollment_endpoints = []
+        web_enrollment = False
+        for server in enrollment_servers:
+            if server:
+                enrollment_endpoints.append(server)
+                # Presence of enrollment servers indicates web enrollment
+                web_enrollment = True
+
         return cls(
             cn=entry.get("cn", ""),
             name=entry.get("name", entry.get("cn", "")),
@@ -87,6 +111,8 @@ class EnterpriseCA(BaseModel):
             ca_certificate_dn=entry.get("cACertificateDN", ""),
             flags=entry.get("flags", 0),
             security_descriptor_raw=entry.get("nTSecurityDescriptor", b""),
+            web_enrollment_enabled=web_enrollment,
+            enrollment_endpoints=enrollment_endpoints,
         )
 
     def to_bloodhound_node(self) -> dict:

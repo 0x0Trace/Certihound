@@ -29,7 +29,7 @@
 
 ---
 
-**CertiHound** enumerates Active Directory Certificate Services (AD CS) via LDAP and exports BloodHound CE-compatible data for attack path visualization. Identify ESC1-ESC13 vulnerabilities and visualize certificate-based attack paths.
+**CertiHound** enumerates Active Directory Certificate Services (AD CS) via LDAP and exports BloodHound CE-compatible data for attack path visualization. Identify ESC1-ESC17 vulnerabilities and visualize certificate-based attack paths.
 
 ## Screenshots
 
@@ -55,7 +55,7 @@
 |---------|-------------|
 | **Linux-Native** | No Windows dependencies - pure Python LDAP enumeration |
 | **BloodHound CE v6+** | Direct JSON/ZIP import with full node and edge support |
-| **Vulnerability Detection** | ESC1, ESC3, ESC4, ESC6, ESC9, ESC10, ESC13, GoldenCert |
+| **Vulnerability Detection** | ESC1-ESC11, ESC13-ESC17, GoldenCert |
 | **Multiple Backends** | Works with ldap3, impacket, or any compatible LDAP adapter |
 | **NetExec Integration** | Seamless integration with NetExec's `--bloodhound` option |
 | **Comprehensive Coverage** | Certificate templates, Enterprise CAs, Root CAs, NTAuth, AIA CAs |
@@ -65,12 +65,21 @@
 | Vulnerability | Description |
 |---------------|-------------|
 | **ESC1** | Enrollee supplies subject with low-privilege enrollment |
+| **ESC2** | Any Purpose EKU or no EKU allows enrollment agent abuse |
 | **ESC3** | Enrollment agent templates + vulnerable targets |
 | **ESC4** | Dangerous ACL permissions on certificate templates |
+| **ESC5** | Vulnerable PKI object access control on AD containers |
 | **ESC6** | EDITF_ATTRIBUTESUBJECTALTNAME2 on Enterprise CA |
+| **ESC7** | Dangerous CA permissions (ManageCA / ManageCertificates) |
+| **ESC8** | NTLM relay to AD CS web enrollment (HTTP) endpoints |
 | **ESC9** | No security extension + weak certificate mapping |
 | **ESC10** | Weak certificate mapping without strong binding |
+| **ESC11** | NTLM relay to AD CS RPC endpoints (no encryption enforcement) |
 | **ESC13** | Issuance policy with OID group link abuse |
+| **ESC14** | Weak explicit certificate mappings (altSecurityIdentities) |
+| **ESC15** | EKUwu - Application policy abuse on Schema V1 templates |
+| **ESC16** | Security extension globally disabled on CA |
+| **ESC17** | Server Authentication EKU + enrollee supplies subject (TLS MITM) |
 | **GoldenCert** | CA private key extraction from hosting computer |
 
 ---
@@ -286,13 +295,22 @@ result.write_zip("adcs_bloodhound.zip")
 ```python
 from certihound import (
     detect_esc1,
+    detect_esc2,
     detect_esc3_agent,
     detect_esc3_target,
     detect_esc4,
+    detect_esc5,
     detect_esc6,
+    detect_esc7,
+    detect_esc8,
     detect_esc9,
     detect_esc10,
+    detect_esc11,
     detect_esc13,
+    detect_esc14,
+    detect_esc15,
+    detect_esc16,
+    detect_esc17,
 )
 ```
 

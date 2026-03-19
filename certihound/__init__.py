@@ -66,8 +66,8 @@ Integration with ldap3:
     ```
 """
 
-__version__ = "0.1.0"
-__author__ = "CertiHound Contributors"
+__version__ = "0.2.0"
+__author__ = "Zerotrace"
 
 # Main API classes
 from .collector import ADCSCollector, ADCSData, ExternalADCSCollector
@@ -89,13 +89,22 @@ from .objects.aiaca import AIACA
 # Detection (optional)
 from .detection import (
     detect_esc1,
+    detect_esc2,
     detect_esc3_agent,
     detect_esc3_target,
     detect_esc4,
+    detect_esc5,
     detect_esc6,
+    detect_esc7,
+    detect_esc8,
     detect_esc9,
     detect_esc10,
+    detect_esc11,
     detect_esc13,
+    detect_esc14,
+    detect_esc15,
+    detect_esc16,
+    detect_esc17,
 )
 
 __all__ = [
@@ -120,11 +129,20 @@ __all__ = [
     "AIACA",
     # Detection
     "detect_esc1",
+    "detect_esc2",
     "detect_esc3_agent",
     "detect_esc3_target",
     "detect_esc4",
+    "detect_esc5",
     "detect_esc6",
+    "detect_esc7",
+    "detect_esc8",
     "detect_esc9",
     "detect_esc10",
+    "detect_esc11",
     "detect_esc13",
+    "detect_esc14",
+    "detect_esc15",
+    "detect_esc16",
+    "detect_esc17",
 ]

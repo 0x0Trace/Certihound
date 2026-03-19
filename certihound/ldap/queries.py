@@ -68,6 +68,7 @@ class ADCSQueries:
             "cACertificateDN",
             "nTSecurityDescriptor",
             "flags",
+            "msPKI-Enrollment-Servers",
             "whenCreated",
             "whenChanged",
         ],
