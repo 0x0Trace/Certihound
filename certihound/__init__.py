@@ -66,7 +66,7 @@ Integration with ldap3:
     ```
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "Zerotrace"
 
 # Main API classes
@@ -78,6 +78,12 @@ from .ldap.connection import LDAPConnection, LDAPConfig
 
 # Adapters for external tool integration
 from .adapters import ImpacketLDAPAdapter
+
+# RPC-based CA config (optional - requires impacket + admin access)
+try:
+    from .rpc import CARegistryReader, CARegistryFlags
+except ImportError:
+    pass
 
 # Data models
 from .objects.certtemplate import CertTemplate

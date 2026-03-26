@@ -43,6 +43,11 @@ def detect_esc11(
 
     Returns ESC11Result if vulnerable, None otherwise.
     """
+    # If flags couldn't be determined (e.g. insufficient privileges), don't flag
+    # as vulnerable — we can't confirm the misconfiguration exists.
+    if ca.flags is None:
+        return None
+
     # Check if encryption enforcement is missing
     if ca.flags & IF_ENFORCEENCRYPTICERTREQUEST:
         return None

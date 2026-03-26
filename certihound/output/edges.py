@@ -466,13 +466,19 @@ class EdgeGenerator:
 
     def generate_adcsesc16_edge(
         self,
-        principal_id: str,
         template: "CertTemplate",
         ca: "EnterpriseCA",
     ) -> dict:
-        """Generate ADCSESC16 edge (Principal -> Domain)."""
+        """Generate ADCSESC16 edge (EnterpriseCA -> Domain).
+
+        ESC16 is a CA-level misconfiguration. The edge goes from the
+        Enterprise CA to the Domain, not from individual principals,
+        because exploitation additionally requires GenericWrite on a
+        target user's UPN (a graph-level prerequisite outside ADCS scope).
+        """
+        ca_id = self._normalize_guid(ca.object_guid) if ca.object_guid else ""
         return {
-            "StartNode": principal_id,
+            "StartNode": ca_id,
             "EndNode": self.domain_sid,
             "EdgeType": "ADCSESC16",
             "EdgeProps": {

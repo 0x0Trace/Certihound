@@ -345,7 +345,7 @@ class BloodHoundOutput:
                             )
                             self.edge_generator.edges.append(edge)
 
-                # ESC16 - Security Extension Disabled on CA
+                # ESC16 - Security Extension Disabled on CA (CA-level edge)
                 esc16_result = detect_esc16(template, ca, self.domain_sid)
                 if esc16_result:
                     template.is_vulnerable = True
@@ -354,14 +354,13 @@ class BloodHoundOutput:
                         "type": "ESC16",
                         "template": template.cn,
                         "ca": ca.cn,
-                        "principals": esc16_result.vulnerable_principals,
+                        "principals": [],
                         "reasons": esc16_result.reasons,
                     })
-                    for principal in esc16_result.vulnerable_principals:
-                        edge = self.edge_generator.generate_adcsesc16_edge(
-                            principal, template, ca
-                        )
-                        self.edge_generator.edges.append(edge)
+                    edge = self.edge_generator.generate_adcsesc16_edge(
+                        template, ca
+                    )
+                    self.edge_generator.edges.append(edge)
 
                 # ESC17 - Server Authentication + Enrollee Supplies Subject (TLS MITM)
                 esc17_result = detect_esc17(template, ca, self.domain_sid)

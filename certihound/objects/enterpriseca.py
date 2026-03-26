@@ -27,7 +27,7 @@ class EnterpriseCA(BaseModel):
     certificate_templates: list[str] = Field(default_factory=list)
     ca_certificate_raw: bytes = b""
     ca_certificate_dn: str = ""
-    flags: int = 0
+    flags: int | None = None
 
     # Security descriptor
     security_descriptor_raw: bytes = b""
@@ -51,8 +51,13 @@ class EnterpriseCA(BaseModel):
 
     @computed_field
     @property
-    def enforce_encrypt_rpc(self) -> bool:
-        """Check if IF_ENFORCEENCRYPTICERTREQUEST flag is set (ESC11 mitigation)."""
+    def enforce_encrypt_rpc(self) -> bool | None:
+        """Check if IF_ENFORCEENCRYPTICERTREQUEST flag is set (ESC11 mitigation).
+
+        Returns None when flags could not be determined (e.g. insufficient privileges).
+        """
+        if self.flags is None:
+            return None
         IF_ENFORCEENCRYPTICERTREQUEST = 0x00000200
         return bool(self.flags & IF_ENFORCEENCRYPTICERTREQUEST)
 
@@ -109,7 +114,7 @@ class EnterpriseCA(BaseModel):
             certificate_templates=entry.get("certificateTemplates", []),
             ca_certificate_raw=entry.get("cACertificate", b""),
             ca_certificate_dn=entry.get("cACertificateDN", ""),
-            flags=entry.get("flags", 0),
+            flags=entry.get("flags"),
             security_descriptor_raw=entry.get("nTSecurityDescriptor", b""),
             web_enrollment_enabled=web_enrollment,
             enrollment_endpoints=enrollment_endpoints,
@@ -129,7 +134,7 @@ class EnterpriseCA(BaseModel):
                 "certthumbprint": self.cert_thumbprint,
                 "certchain": [],
                 "certname": self.cert_name,
-                "flags": self.flags,
+                "flags": self.flags if self.flags is not None else "Unknown",
                 "isuserspecifiessanenabled": self.is_user_specifies_san_enabled,
                 "hasbasicconstraints": self.has_basic_constraints,
                 "basicconstraintpathlength": self.basic_constraint_path_length,

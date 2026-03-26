@@ -66,6 +66,35 @@ class ADCSData:
             "aia_cas": len(self.aia_cas),
         }
 
+    def apply_registry_flags(self, smb_connection: Any) -> None:
+        """Read CA registry flags via RPC and apply to Enterprise CAs.
+
+        This enriches CA objects with flags only available from the
+        Windows registry (not LDAP), enabling ESC6/ESC11/ESC16 detection.
+
+        Args:
+            smb_connection: An impacket SMBConnection to the CA host.
+        """
+        from .rpc.ca_registry import CARegistryReader
+
+        try:
+            with CARegistryReader(smb_connection) as reader:
+                for ca in self.enterprise_cas:
+                    flags = reader.read_ca_flags(ca.cn, ca.dns_hostname)
+                    if flags.success:
+                        ca.is_user_specifies_san_enabled = flags.san_flag_enabled
+                        ca.is_security_extension_disabled = flags.security_extension_disabled
+                        # Override enforce_encrypt_rpc with registry value if available
+                        if flags.interface_flags is not None:
+                            base = ca.flags if ca.flags is not None else 0
+                            ca.flags = (base & ~0x200) | (
+                                flags.interface_flags & 0x200
+                            )
+        except ImportError:
+            pass  # impacket not available
+        except Exception:
+            pass  # Registry access failed (non-admin, service stopped, etc.)
+
 
 class ADCSCollector:
     """
@@ -234,6 +263,22 @@ class ExternalADCSCollector(ADCSCollector):
             self._domain_dn = ",".join(f"DC={part}" for part in domain.split("."))
         self._config_dn = f"CN=Configuration,{self._domain_dn}"
 
+    # LDAP_SERVER_SD_FLAGS_OID - required to retrieve nTSecurityDescriptor
+    _SD_FLAGS_OID = "1.2.840.113556.1.4.801"
+    # DACL (0x04) | OWNER (0x01) | GROUP (0x02) = 0x07
+    _SD_FLAGS_VALUE = 0x07
+
+    def _build_sd_control(self) -> list[tuple]:
+        """Build LDAP SD_FLAGS control for ldap3 connections.
+
+        The value is BER-encoded: SEQUENCE { INTEGER sd_flags }
+        """
+        import struct
+
+        # BER encode: sequence tag (0x30), length (3), integer tag (0x02), length (1), value
+        sd_value = b"\x30\x03\x02\x01" + struct.pack("B", self._SD_FLAGS_VALUE)
+        return [(self._SD_FLAGS_OID, True, sd_value)]
+
     def _search(
         self,
         search_base: str,
@@ -244,16 +289,28 @@ class ExternalADCSCollector(ADCSCollector):
         # Handle different connection types
         conn = self._external_conn
 
+        # Build search kwargs - add SD_FLAGS control if requesting nTSecurityDescriptor
+        needs_sd = "nTSecurityDescriptor" in attributes
+
+        # Check if this is a true ldap3 Connection (has 'server' attr)
+        # vs ImpacketLDAPAdapter (which handles SD_FLAGS internally)
+        is_ldap3 = hasattr(conn, 'server')
+
         # Try ldap3 style
         if hasattr(conn, 'search') and hasattr(conn, 'entries'):
-            conn.search(
-                search_base=search_base,
-                search_filter=search_filter,
-                attributes=attributes,
-            )
+            search_kwargs: dict[str, Any] = {
+                "search_base": search_base,
+                "search_filter": search_filter,
+                "attributes": attributes,
+            }
+            # Only pass controls to real ldap3 connections
+            # ImpacketLDAPAdapter handles SD_FLAGS in its own search()
+            if needs_sd and is_ldap3:
+                search_kwargs["controls"] = self._build_sd_control()
+            conn.search(**search_kwargs)
             return list(conn.entries)
 
-        # Try generic search method
+        # Try generic search method (e.g., ImpacketLDAPAdapter)
         if hasattr(conn, 'search'):
             return conn.search(
                 search_base=search_base,
