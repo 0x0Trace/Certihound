@@ -42,6 +42,11 @@ console = Console()
     help="Password for authentication",
 )
 @click.option(
+    "-H", "--hashes",
+    "hashes",
+    help="NTLM hash for pass-the-hash (LMHASH:NTHASH or NTHASH)",
+)
+@click.option(
     "--dc",
     "dc_ip",
     help="Domain Controller IP or hostname",
@@ -99,6 +104,7 @@ def main(
     domain: str,
     username: str | None,
     password: str | None,
+    hashes: str | None,
     dc_ip: str | None,
     use_kerberos: bool,
     use_ldaps: bool,
@@ -123,6 +129,7 @@ def main(
         domain=domain,
         username=username,
         password=password,
+        hashes=hashes,
         dc_ip=dc_ip,
         use_kerberos=use_kerberos,
         use_ldaps=use_ldaps,
@@ -146,6 +153,7 @@ def main(
         domain=config.domain,
         username=config.username,
         password=config.password,
+        hashes=config.hashes,
         dc_ip=config.dc_ip,
         use_ldaps=config.use_ldaps,
         use_kerberos=config.use_kerberos,

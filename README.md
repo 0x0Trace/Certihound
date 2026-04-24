@@ -89,7 +89,11 @@
 ### From PyPI (Recommended)
 
 ```bash
-pip install certihound
+pipx install certihound
+# Or, if you need Kerberos (-k) auth:
+pipx install 'certihound[kerberos]'
+# On an existing install, inject gssapi:
+pipx inject certihound gssapi
 ```
 
 ### From Source
@@ -97,7 +101,8 @@ pip install certihound
 ```bash
 git clone https://github.com/0x0Trace/certihound.git
 cd certihound
-pip install -e .
+pip install -e .            # core
+pip install -e '.[kerberos]' # with Kerberos support
 ```
 
 ### Verify Installation
@@ -117,11 +122,14 @@ certihound --help
 # Basic enumeration with password authentication
 certihound -d corp.local -u 'user' -p 'password' --dc 10.10.10.10 -o output/
 
+# Pass-the-Hash (NTHASH only, or LMHASH:NTHASH)
+certihound -d corp.local -u 'user' -H :31d6cfe0d16ae931b73c59d7e0c089c0 --dc 10.10.10.10
+
 # LDAPS (SSL/TLS) connection
 certihound -d corp.local -u 'user' -p 'password' --dc 10.10.10.10 --ldaps -o output/
 
-# Kerberos authentication (uses ccache)
-certihound -d corp.local -k --dc 10.10.10.10 -o output/
+# Kerberos authentication (uses ccache; requires the 'kerberos' extra)
+KRB5CCNAME=user.ccache certihound -d corp.local -k --dc dc01.corp.local -o output/
 
 # Output as ZIP (default) or JSON
 certihound -d corp.local -u 'user' -p 'password' --dc 10.10.10.10 --format zip
@@ -166,6 +174,7 @@ Options:
   -d, --domain TEXT         Target domain FQDN (e.g., corp.local)  [required]
   -u, --username TEXT       Username for authentication
   -p, --password TEXT       Password for authentication
+  -H, --hashes TEXT         NTLM hash for pass-the-hash (LMHASH:NTHASH or NTHASH)
   --dc TEXT                 Domain Controller IP or hostname
   -k, --kerberos            Use Kerberos authentication (ccache)
   --ldaps                   Use LDAPS (SSL/TLS)

@@ -69,6 +69,13 @@ Integration with ldap3:
 __version__ = "0.3.0"
 __author__ = "Zerotrace"
 
+# Install MD4 compatibility shim for OpenSSL 3 / legacy-provider-disabled hosts
+# before any module (notably ldap3) imports hashlib.new('md4', ...).
+from .utils.compat import install_md4_shim as _install_md4_shim
+
+_install_md4_shim()
+del _install_md4_shim
+
 # Main API classes
 from .collector import ADCSCollector, ADCSData, ExternalADCSCollector
 from .exporter import BloodHoundCEExporter, ExportResult

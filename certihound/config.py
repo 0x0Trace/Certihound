@@ -22,6 +22,7 @@ class Config:
     use_ldaps: bool = False
     ca_cert: str | None = None
     ldap_port: int | None = None
+    hashes: str | None = None  # LM:NT or :NT hash for pass-the-hash
 
     # Output settings
     output_dir: str = "./output"
@@ -47,8 +48,26 @@ class Config:
         if not self.domain:
             errors.append("Domain is required (-d/--domain)")
 
-        if not self.use_kerberos and not (self.username and self.password):
-            errors.append("Either username/password or Kerberos (-k) is required")
+        has_secret = bool(self.password) or bool(self.hashes)
+        if not self.use_kerberos and not (self.username and has_secret):
+            errors.append(
+                "Either username with password/hash (-u + -p or -H) or Kerberos (-k) is required"
+            )
+
+        if self.password and self.hashes:
+            errors.append("Use either -p/--password or -H/--hashes, not both")
+
+        if self.hashes:
+            parts = self.hashes.split(":")
+            if len(parts) == 1:
+                nt = parts[0]
+            elif len(parts) == 2:
+                nt = parts[1]
+            else:
+                errors.append("Invalid --hashes format (expected LMHASH:NTHASH or NTHASH)")
+                nt = ""
+            if nt and (len(nt) != 32 or not all(c in "0123456789abcdefABCDEF" for c in nt)):
+                errors.append("NT hash must be 32 hex characters")
 
         return errors
 

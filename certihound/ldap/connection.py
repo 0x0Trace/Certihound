@@ -22,6 +22,17 @@ from rich.console import Console
 console = Console()
 
 
+def _looks_like_ip(host: str) -> bool:
+    """Return True if ``host`` is a literal IPv4/IPv6 address."""
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 @dataclass
 class LDAPConfig:
     """LDAP connection configuration."""
@@ -34,6 +45,7 @@ class LDAPConfig:
     use_kerberos: bool = False
     ca_cert: str | None = None
     port: int | None = None
+    hashes: str | None = None  # "LMHASH:NTHASH" or ":NTHASH" or "NTHASH"
 
     @property
     def domain_dn(self) -> str:
@@ -104,10 +116,10 @@ class LDAPConnection:
             # Determine authentication method
             if self.config.use_kerberos:
                 self._connection = self._connect_kerberos()
-            elif self.config.username and self.config.password:
+            elif self.config.username and (self.config.password or self.config.hashes):
                 self._connection = self._connect_ntlm()
             else:
-                raise ValueError("Either Kerberos or username/password required")
+                raise ValueError("Either Kerberos or username + password/hash required")
 
             if not self._connection.bind():
                 result = self._connection.result
@@ -136,7 +148,7 @@ class LDAPConnection:
             return False
 
     def _connect_ntlm(self) -> Connection:
-        """Create connection with NTLM authentication."""
+        """Create connection with NTLM authentication (password or hash)."""
         # Format username as DOMAIN\user
         username = self.config.username or ""
         if "\\" not in username and "@" not in username:
@@ -144,22 +156,91 @@ class LDAPConnection:
         else:
             user = username
 
+        # ldap3 NTLM accepts either a plaintext password, or a LM:NT hash pair
+        # where each half is 32 hex chars. Normalize --hashes inputs here.
+        if self.config.hashes:
+            secret = self._format_ntlm_hash(self.config.hashes)
+        else:
+            secret = self.config.password
+
         return Connection(
             self._server,
             user=user,
-            password=self.config.password,
+            password=secret,
             authentication=NTLM,
             auto_bind=False,
         )
 
+    @staticmethod
+    def _format_ntlm_hash(raw: str) -> str:
+        """Normalize a user-supplied hash to ldap3's ``LMHASH:NTHASH`` form."""
+        empty_lm = "aad3b435b51404eeaad3b435b51404ee"
+        parts = raw.split(":")
+        if len(parts) == 1:
+            nt = parts[0]
+            lm = empty_lm
+        else:
+            lm = parts[0] or empty_lm
+            nt = parts[1]
+        return f"{lm}:{nt}"
+
     def _connect_kerberos(self) -> Connection:
-        """Create connection with Kerberos authentication."""
+        """Create connection with Kerberos authentication (SASL/GSSAPI).
+
+        Requires the ``gssapi`` package (Linux/macOS) or ``winkerberos``
+        (Windows). Install with ``pipx install 'certihound[kerberos]'`` or
+        ``pipx inject certihound gssapi``.
+        """
+        try:
+            import gssapi  # noqa: F401
+        except ImportError:
+            try:
+                import winkerberos  # noqa: F401
+            except ImportError:
+                raise RuntimeError(
+                    "Kerberos support requires the 'gssapi' (Linux/macOS) "
+                    "or 'winkerberos' (Windows) package. "
+                    "Install with: pipx inject certihound gssapi "
+                    "(or: pipx install 'certihound[kerberos]')"
+                ) from None
+
+        # Activate the ldap3 shim that honors fully-qualified Kerberos
+        # principals — this sidesteps MIT krb5's hostname canonicalization,
+        # which is the usual cause of "Server not found in Kerberos database"
+        # in pentest/lab environments (missing PTR records, host case
+        # mismatches, realm != DNS suffix).
+        from .kerberos_compat import install_kerberos_principal_shim
+
+        install_kerberos_principal_shim()
+
+        target = self._kerberos_target()
         return Connection(
             self._server,
             authentication=SASL,
             sasl_mechanism="GSSAPI",
+            sasl_credentials=(target,) if target else None,
             auto_bind=False,
         )
+
+    def _kerberos_target(self) -> str | None:
+        """Return the Kerberos target for GSSAPI.
+
+        When we can infer a DC FQDN, build a fully-qualified principal
+        ``ldap/<dc-fqdn>@REALM``. The compat shim recognises the ``/`` and
+        uses gssapi ``kerberos_principal`` NameType, skipping krb5's DNS
+        canonicalization. For bare IPs we fall back to the domain so the
+        user's ``[domain_realm]`` mapping in ``krb5.conf`` can resolve it.
+        """
+        addr = self.config.dc_ip or self.config.domain
+        if not addr:
+            return None
+        realm = (self.config.domain or "").upper()
+        if _looks_like_ip(addr):
+            return self.config.domain or None
+        host = addr.lower()
+        if realm:
+            return f"ldap/{host}@{realm}"
+        return host
 
     def _get_domain_sid(self) -> str:
         """Retrieve domain SID from AD."""
