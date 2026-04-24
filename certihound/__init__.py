@@ -66,7 +66,7 @@ Integration with ldap3:
     ```
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __author__ = "Zerotrace"
 
 # Install MD4 compatibility shim for OpenSSL 3 / legacy-provider-disabled hosts

@@ -74,7 +74,9 @@ class Config:
 
 def get_banner() -> str:
     """Get CertiHound banner."""
-    return """
+    from . import __version__
+
+    return f"""
    ______          __  _ __  __                      __
   / ____/__  _____/ /_(_) / / /___  __  ______  ____/ /
  / /   / _ \\/ ___/ __/ / /_/ / __ \\/ / / / __ \\/ __  /
@@ -82,5 +84,5 @@ def get_banner() -> str:
 \\____/\\___/_/   \\__/_/_/ /_/\\____/\\__,_/_/ /_/\\__,_/
 
     Linux-native AD CS collector for BloodHound CE
-                     v0.1.0
+                     v{__version__}
 """
