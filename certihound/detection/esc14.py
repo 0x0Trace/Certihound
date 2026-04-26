@@ -29,7 +29,7 @@ def detect_esc14(
     template: "CertTemplate",
     ca: "EnterpriseCA",
     domain_sid: str,
-    strong_cert_binding_enforced: bool = False,
+    strong_cert_binding_enforced: bool | None = None,
     alt_security_identities_users: list[str] | None = None,
 ) -> ESC14Result | None:
     """
@@ -39,18 +39,20 @@ def detect_esc14(
     (altSecurityIdentities) on AD accounts allow certificates to
     authenticate as unintended users.
 
-    Requirements:
-    1. Template has authentication EKU
-    2. No manager approval
-    3. Strong certificate binding NOT enforced
-    4. Users exist with weak altSecurityIdentities mappings
-       (e.g., mapping by Issuer only without serial number)
-    5. Low-privileged principal has enrollment rights
-    6. Template is published to the CA
+    Requirements (all must hold to flag):
+    1. Template is published to the CA
+    2. Template has authentication EKU
+    3. No manager approval
+    4. Low-privileged principal has enrollment rights
+    5. Strong certificate binding NOT enforced (DC registry value
+       StrongCertificateBindingEnforcement != 2)
+    6. At least one AD account has a weak altSecurityIdentities
+       mapping (e.g., X509:<I>... without <SR>/<SKI>/<PN>)
 
-    When explicit mappings use weak binding (e.g., X509:<I> without
-    <SR> or <SKI>), an attacker who can obtain a certificate from
-    the same CA can authenticate as the mapped user.
+    Conditions 5 and 6 are *external* signals that cannot be
+    determined from the cert template alone. If the caller cannot
+    supply them (None / empty), this function returns None — an
+    auth-capable enrollable template is NOT, by itself, ESC14.
 
     Returns ESC14Result if vulnerable, None otherwise.
     """
@@ -58,39 +60,36 @@ def detect_esc14(
     if template.cn not in ca.certificate_templates:
         return None
 
-    # Strong binding enforcement prevents this attack
-    if strong_cert_binding_enforced:
+    # External preconditions must be known and unfavorable. If the caller
+    # didn't (or couldn't) supply them, decline to flag — this is what
+    # used to false-positive on every auth-capable enrollable template.
+    if strong_cert_binding_enforced is None or strong_cert_binding_enforced:
+        return None
+    if not alt_security_identities_users:
         return None
 
-    reasons = []
-    vulnerable_principals = []
-
-    # Check authentication EKU
+    # Template-side preconditions
     if not template.has_authentication_eku:
         return None
-
-    # Check manager approval
     if template.requires_manager_approval:
         return None
 
-    # Check enrollment rights
-    for principal_sid in template.enrollment_principals:
-        if is_low_privileged_sid(principal_sid, domain_sid):
-            vulnerable_principals.append(principal_sid)
-
+    vulnerable_principals = [
+        sid
+        for sid in template.enrollment_principals
+        if is_low_privileged_sid(sid, domain_sid)
+    ]
     if not vulnerable_principals:
         return None
 
-    reasons.append("Has authentication EKU")
-    reasons.append("Manager approval not required")
-    reasons.append("Strong certificate binding not enforced")
-    reasons.append(f"Low-privileged principals can enroll: {len(vulnerable_principals)} found")
-
-    if alt_security_identities_users:
-        reasons.append(
-            f"Users with weak altSecurityIdentities mappings: "
-            f"{len(alt_security_identities_users)} found"
-        )
+    reasons = [
+        "Has authentication EKU",
+        "Manager approval not required",
+        "Strong certificate binding not enforced (DC StrongCertificateBindingEnforcement != 2)",
+        f"Low-privileged principals can enroll: {len(vulnerable_principals)} found",
+        f"AD accounts with weak altSecurityIdentities mappings: "
+        f"{len(alt_security_identities_users)} found",
+    ]
 
     return ESC14Result(
         vulnerable=True,

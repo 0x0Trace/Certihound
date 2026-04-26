@@ -112,6 +112,9 @@ class LDAPResultParser:
             "msPKI-Certificate-Application-Policy": parser.get_list_attribute(
                 entry, "msPKI-Certificate-Application-Policy"
             ),
+            "msPKI-Certificate-Policy": parser.get_list_attribute(
+                entry, "msPKI-Certificate-Policy"
+            ),
             "msPKI-RA-Application-Policies": parser.get_list_attribute(
                 entry, "msPKI-RA-Application-Policies"
             ),

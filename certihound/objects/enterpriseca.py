@@ -28,6 +28,12 @@ class EnterpriseCA(BaseModel):
     ca_certificate_raw: bytes = b""
     ca_certificate_dn: str = ""
     flags: int | None = None
+    # InterfaceFlags from the CA's registry (HKLM\SYSTEM\CurrentControlSet\
+    # Services\CertSvc\Configuration\<CA>\InterfaceFlags), retrieved via RRP.
+    # Carries IF_ENFORCEENCRYPTICERTREQUEST (0x200) used by ESC11. This is
+    # NOT the LDAP `flags` attribute on pKIEnrollmentService — that one
+    # uses a different bit layout entirely.
+    interface_flags: int | None = None
 
     # Security descriptor
     security_descriptor_raw: bytes = b""
@@ -52,14 +58,17 @@ class EnterpriseCA(BaseModel):
     @computed_field
     @property
     def enforce_encrypt_rpc(self) -> bool | None:
-        """Check if IF_ENFORCEENCRYPTICERTREQUEST flag is set (ESC11 mitigation).
+        """Check if IF_ENFORCEENCRYPTICERTREQUEST is set (ESC11 mitigation).
 
-        Returns None when flags could not be determined (e.g. insufficient privileges).
+        Sourced from the CA's InterfaceFlags registry value (RRP). Returns
+        None when InterfaceFlags couldn't be retrieved (e.g. registry
+        unreachable or insufficient privileges) — callers must treat this
+        as Unknown and not as "vulnerable".
         """
-        if self.flags is None:
+        if self.interface_flags is None:
             return None
         IF_ENFORCEENCRYPTICERTREQUEST = 0x00000200
-        return bool(self.flags & IF_ENFORCEENCRYPTICERTREQUEST)
+        return bool(self.interface_flags & IF_ENFORCEENCRYPTICERTREQUEST)
 
     @computed_field
     @property

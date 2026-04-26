@@ -32,28 +32,35 @@ def detect_esc11(
     ESC11: AD CS RPC (ICPR) endpoints do not enforce encryption,
     allowing NTLM relay attacks.
 
-    The IF_ENFORCEENCRYPTICERTREQUEST flag (0x200) in the CA's flags
-    attribute controls whether RPC encryption is required. When this
-    flag is NOT set:
+    The IF_ENFORCEENCRYPTICERTREQUEST bit (0x200) lives in the CA's
+    InterfaceFlags registry value (HKLM\\SYSTEM\\CurrentControlSet\\
+    Services\\CertSvc\\Configuration\\<CA>\\InterfaceFlags), readable
+    only via remote registry. It is NOT in the LDAP `flags` attribute
+    on pKIEnrollmentService (which uses a different bit layout).
+
+    When the bit is NOT set:
     1. Attacker can relay NTLM authentication to the RPC endpoint
     2. Request certificates as the relayed account
     3. Use the certificate for domain authentication
 
     This is similar to ESC8 but targets the RPC interface instead of HTTP.
 
-    Returns ESC11Result if vulnerable, None otherwise.
+    Returns ESC11Result if vulnerable, None when the bit is set OR when
+    InterfaceFlags couldn't be retrieved (Unknown — never flag on guess).
     """
-    # If flags couldn't be determined (e.g. insufficient privileges), don't flag
-    # as vulnerable — we can't confirm the misconfiguration exists.
-    if ca.flags is None:
+    # If InterfaceFlags couldn't be determined (e.g. RRP unreachable or
+    # insufficient privileges), don't flag — we can't confirm the
+    # misconfiguration exists, and the LDAP `flags` attribute is the
+    # wrong source for this bit.
+    if ca.interface_flags is None:
         return None
 
     # Check if encryption enforcement is missing
-    if ca.flags & IF_ENFORCEENCRYPTICERTREQUEST:
+    if ca.interface_flags & IF_ENFORCEENCRYPTICERTREQUEST:
         return None
 
     reasons = [
-        "CA does not enforce RPC encryption (IF_ENFORCEENCRYPTICERTREQUEST not set)",
+        "CA does not enforce RPC encryption (IF_ENFORCEENCRYPTICERTREQUEST not set in InterfaceFlags)",
         "ICPR interface accepts unencrypted requests",
         "Attacker can relay NTLM authentication to RPC endpoint for certificate enrollment",
     ]

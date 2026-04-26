@@ -36,6 +36,7 @@ class ADCSQueries:
             "msPKI-Enrollment-Flag",
             "msPKI-RA-Signature",
             "msPKI-Certificate-Application-Policy",
+            "msPKI-Certificate-Policy",
             "msPKI-RA-Application-Policies",
             "pKIExtendedKeyUsage",
             "pKIExpirationPeriod",

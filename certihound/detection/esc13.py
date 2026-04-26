@@ -61,8 +61,11 @@ def detect_esc13(
     reasons = []
     vulnerable_principals = []
 
-    # Check if template has any issuance policies linked to groups
-    template_policies = template.application_policies  # msPKI-Certificate-Application-Policy
+    # Issuance policies (Certificate Policies extension, msPKI-Certificate-Policy)
+    # are what msDS-OIDToGroupLink resolves against — application policies
+    # (msPKI-Certificate-Application-Policy) are a different extension and do
+    # NOT trigger the OID-to-group mapping.
+    template_policies = template.issuance_policies
 
     linked_policy_oid = None
     linked_group_dn = None

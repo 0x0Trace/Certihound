@@ -66,6 +66,13 @@ class BloodHoundOutput:
         self.vulnerabilities: list[dict] = []
         self.issuance_policies: dict[str, str] = {}
 
+        # External signals required by ESC14. Default None/empty means
+        # "unknown" and detection will decline rather than guess.
+        # Populate via set_strong_cert_binding_enforced() and
+        # set_alt_security_identities_users() before detect_vulnerabilities().
+        self.strong_cert_binding_enforced: bool | None = None
+        self.alt_security_identities_users: list[str] = []
+
     def add_templates(self, templates: list["CertTemplate"]) -> None:
         """Add certificate templates."""
         self.templates.extend(templates)
@@ -306,7 +313,13 @@ class BloodHoundOutput:
                         })
 
                 # ESC14 - Weak Explicit Certificate Mappings
-                esc14_result = detect_esc14(template, ca, self.domain_sid)
+                esc14_result = detect_esc14(
+                    template,
+                    ca,
+                    self.domain_sid,
+                    strong_cert_binding_enforced=self.strong_cert_binding_enforced,
+                    alt_security_identities_users=self.alt_security_identities_users,
+                )
                 if esc14_result:
                     template.is_vulnerable = True
                     template.vulnerabilities.append("ESC14")

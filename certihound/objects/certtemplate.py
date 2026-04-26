@@ -77,6 +77,9 @@ class CertTemplate(BaseModel):
     # EKUs and policies
     ekus: list[str] = Field(default_factory=list)
     application_policies: list[str] = Field(default_factory=list)
+    # msPKI-Certificate-Policy: issuance policy OIDs (Certificate Policies extension).
+    # ESC13 (msDS-OIDToGroupLink) keys off these — NOT msPKI-Certificate-Application-Policy.
+    issuance_policies: list[str] = Field(default_factory=list)
     ra_application_policies: list[str] = Field(default_factory=list)
 
     # Validity periods
@@ -226,6 +229,7 @@ class CertTemplate(BaseModel):
             minimal_key_size=entry.get("msPKI-Minimal-Key-Size", 0),
             ekus=entry.get("pKIExtendedKeyUsage", []),
             application_policies=entry.get("msPKI-Certificate-Application-Policy", []),
+            issuance_policies=entry.get("msPKI-Certificate-Policy", []),
             ra_application_policies=entry.get("msPKI-RA-Application-Policies", []),
             expiration_period_raw=entry.get("pKIExpirationPeriod", b""),
             overlap_period_raw=entry.get("pKIOverlapPeriod", b""),

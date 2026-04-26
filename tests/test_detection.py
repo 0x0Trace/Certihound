@@ -1204,6 +1204,7 @@ class TestESC13Detection:
             "ra_signature": 0,
             "ekus": [],
             "application_policies": [],
+            "issuance_policies": [],
             "enrollment_principals": [],
         }
         defaults.update(kwargs)
@@ -1227,7 +1228,7 @@ class TestESC13Detection:
         linked_group = "CN=HighPrivGroup,CN=Users,DC=corp,DC=local"
 
         template = self.create_template(
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1249,7 +1250,7 @@ class TestESC13Detection:
         other_policy = "1.3.6.1.4.1.311.21.8.999999"
 
         template = self.create_template(
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1265,7 +1266,7 @@ class TestESC13Detection:
     def test_esc13_no_policies(self):
         """Test that ESC13 requires issuance policies dict."""
         template = self.create_template(
-            application_policies=["1.3.6.1.4.1.311.21.8.123456"],
+            issuance_policies=["1.3.6.1.4.1.311.21.8.123456"],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1278,7 +1279,7 @@ class TestESC13Detection:
     def test_esc13_empty_policies(self):
         """Test that ESC13 requires non-empty issuance policies."""
         template = self.create_template(
-            application_policies=["1.3.6.1.4.1.311.21.8.123456"],
+            issuance_policies=["1.3.6.1.4.1.311.21.8.123456"],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1293,7 +1294,7 @@ class TestESC13Detection:
         policy_oid = "1.3.6.1.4.1.311.21.8.123456"
 
         template = self.create_template(
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             ekus=["1.2.3.4.5"],  # Non-auth EKU
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1310,7 +1311,7 @@ class TestESC13Detection:
         policy_oid = "1.3.6.1.4.1.311.21.8.123456"
 
         template = self.create_template(
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             enrollment_flag=2,  # PEND_ALL_REQUESTS
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
@@ -1328,7 +1329,7 @@ class TestESC13Detection:
         policy_oid = "1.3.6.1.4.1.311.21.8.123456"
 
         template = self.create_template(
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-512"],  # Domain Admins only
         )
@@ -1346,7 +1347,7 @@ class TestESC13Detection:
 
         template = self.create_template(
             cn="NotPublished",
-            application_policies=[policy_oid],
+            issuance_policies=[policy_oid],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1365,7 +1366,7 @@ class TestESC13Detection:
         linked_group = "CN=FirstGroup,DC=corp,DC=local"
 
         template = self.create_template(
-            application_policies=[policy_oid1, policy_oid2],
+            issuance_policies=[policy_oid1, policy_oid2],
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
@@ -1700,14 +1701,14 @@ class TestESC11Detection:
             "distinguished_name": "CN=TestCA",
             "domain": "CORP.LOCAL", "domain_sid": self.DOMAIN_SID,
             "certificate_templates": ["TestTemplate"],
-            "flags": 0,
+            "interface_flags": 0,
         }
         defaults.update(kwargs)
         return EnterpriseCA(**defaults)
 
     def test_esc11_no_encryption_enforcement(self):
         """Test ESC11 when RPC encryption not enforced."""
-        ca = self.create_ca(flags=0)  # No IF_ENFORCEENCRYPTICERTREQUEST
+        ca = self.create_ca(interface_flags=0)  # No IF_ENFORCEENCRYPTICERTREQUEST
         result = detect_esc11(ca)
         assert result is not None
         assert result.vulnerable is True
@@ -1715,15 +1716,29 @@ class TestESC11Detection:
 
     def test_esc11_encryption_enforced(self):
         """Test ESC11 not triggered when encryption enforced."""
-        ca = self.create_ca(flags=0x200)  # IF_ENFORCEENCRYPTICERTREQUEST set
+        ca = self.create_ca(interface_flags=0x200)  # IF_ENFORCEENCRYPTICERTREQUEST set
         result = detect_esc11(ca)
         assert result is None
 
     def test_esc11_other_flags_set(self):
         """Test ESC11 with other flags but not encryption enforcement."""
-        ca = self.create_ca(flags=0x100)  # Some other flag, not 0x200
+        ca = self.create_ca(interface_flags=0x100)  # Some other flag, not 0x200
         result = detect_esc11(ca)
         assert result is not None
+
+    def test_esc11_unknown_interface_flags(self):
+        """Test ESC11 declines to flag when InterfaceFlags is unknown (RRP failed)."""
+        ca = self.create_ca(interface_flags=None)
+        result = detect_esc11(ca)
+        assert result is None
+
+    def test_esc11_ldap_flags_alone_does_not_trigger(self):
+        """Regression: LDAP `flags` (different bit layout) must not drive ESC11."""
+        # Bit 0x200 set in LDAP `flags` was previously causing false negatives
+        # (and the absence of it caused false positives with 0 enrollment principals).
+        ca = self.create_ca(flags=0x200, interface_flags=None)
+        result = detect_esc11(ca)
+        assert result is None
 
 
 class TestESC14Detection:
@@ -1752,14 +1767,20 @@ class TestESC14Detection:
             certificate_templates=templates or ["TestTemplate"],
         )
 
+    WEAK_ALTSEC_USERS = ["S-1-5-21-1234567890-1234567890-1234567890-1010"]
+
     def test_esc14_vulnerable(self):
-        """Test ESC14 detection with weak binding."""
+        """Test ESC14 detection: auth template + unenforced binding + weak altSec users."""
         template = self.create_template(
             ekus=[OID.CLIENT_AUTHENTICATION],
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
         ca = self.create_ca()
-        result = detect_esc14(template, ca, self.DOMAIN_SID, strong_cert_binding_enforced=False)
+        result = detect_esc14(
+            template, ca, self.DOMAIN_SID,
+            strong_cert_binding_enforced=False,
+            alt_security_identities_users=self.WEAK_ALTSEC_USERS,
+        )
         assert result is not None
         assert result.vulnerable is True
 
@@ -1770,7 +1791,11 @@ class TestESC14Detection:
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
         ca = self.create_ca()
-        result = detect_esc14(template, ca, self.DOMAIN_SID, strong_cert_binding_enforced=True)
+        result = detect_esc14(
+            template, ca, self.DOMAIN_SID,
+            strong_cert_binding_enforced=True,
+            alt_security_identities_users=self.WEAK_ALTSEC_USERS,
+        )
         assert result is None
 
     def test_esc14_no_auth_eku(self):
@@ -1780,7 +1805,11 @@ class TestESC14Detection:
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
         ca = self.create_ca()
-        result = detect_esc14(template, ca, self.DOMAIN_SID)
+        result = detect_esc14(
+            template, ca, self.DOMAIN_SID,
+            strong_cert_binding_enforced=False,
+            alt_security_identities_users=self.WEAK_ALTSEC_USERS,
+        )
         assert result is None
 
     def test_esc14_template_not_published(self):
@@ -1791,7 +1820,39 @@ class TestESC14Detection:
             enrollment_principals=[f"{self.DOMAIN_SID}-513"],
         )
         ca = self.create_ca(templates=["OtherTemplate"])
+        result = detect_esc14(
+            template, ca, self.DOMAIN_SID,
+            strong_cert_binding_enforced=False,
+            alt_security_identities_users=self.WEAK_ALTSEC_USERS,
+        )
+        assert result is None
+
+    def test_esc14_unknown_binding_state(self):
+        """Regression: unknown StrongCertificateBindingEnforcement must not flag.
+
+        Was the headline false positive — every auth-capable Domain-Users-
+        enrollable template flagged when neither external signal was supplied.
+        """
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
         result = detect_esc14(template, ca, self.DOMAIN_SID)
+        assert result is None
+
+    def test_esc14_no_weak_altsec_users(self):
+        """Regression: no weak altSecurityIdentities mapping → no ESC14."""
+        template = self.create_template(
+            ekus=[OID.CLIENT_AUTHENTICATION],
+            enrollment_principals=[f"{self.DOMAIN_SID}-513"],
+        )
+        ca = self.create_ca()
+        result = detect_esc14(
+            template, ca, self.DOMAIN_SID,
+            strong_cert_binding_enforced=False,
+            alt_security_identities_users=[],
+        )
         assert result is None
 
 
