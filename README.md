@@ -238,8 +238,6 @@ RETURN p
 
 CertiHound integrates with [NetExec](https://github.com/Pennyw0rth/NetExec) for ADCS enumeration.
 
-> **Status:** Integration PR pending review at [Pennyw0rth/NetExec#1054](https://github.com/Pennyw0rth/NetExec/pull/1054)  
-> **Try it now:** Use the [`feature/adcs-collection`](https://github.com/0x0Trace/NetExec/tree/feature/adcs-collection) branch from [0x0Trace/NetExec](https://github.com/0x0Trace/NetExec)
 
 ```bash
 # ADCS only collection
@@ -248,32 +246,6 @@ nxc ldap 10.10.10.10 -u user -p pass --bloodhound -c ADCS
 # Full collection including ADCS
 nxc ldap 10.10.10.10 -u user -p pass --bloodhound -c All --dns-server 10.10.10.10
 ```
-
-### NetExec Integration Code
-
-```python
-from certihound import ADCSCollector, BloodHoundCEExporter, ImpacketLDAPAdapter
-
-# In NetExec's ldap.py:
-adapter = ImpacketLDAPAdapter(
-    search_func=self.search,
-    domain=self.domain,
-    domain_sid=self.sid_domain,
-)
-
-collector = ADCSCollector.from_external(
-    ldap_connection=adapter,
-    domain=self.domain,
-    domain_sid=self.sid_domain,
-)
-data = collector.collect_all()
-
-exporter = BloodHoundCEExporter(data.domain, data.domain_sid)
-result = exporter.export(data)
-result.write_zip("adcs_bloodhound.zip")
-```
-
----
 
 ## API Reference
 
@@ -354,47 +326,6 @@ output_dict = result.to_dict()      # Python dictionary
 
 ---
 
-## Development
-
-### Setup Development Environment
-
-```bash
-# Clone repository
-git clone https://github.com/0x0Trace/certihound.git
-cd certihound
-
-# Install with dev dependencies
-pip install -e ".[dev]"
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=certihound
-
-# Run specific test file
-pytest tests/test_detection.py -v
-```
-
-### Code Quality
-
-```bash
-# Format code
-black certihound/
-
-# Lint
-ruff check certihound/
-
-# Type checking
-mypy certihound/
-```
-
----
-
 ## Dependencies
 
 | Package | Purpose |
@@ -419,9 +350,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Inspired by [Certipy](https://github.com/ly4k/Certipy) by Oliver Lyak
 - BloodHound CE format based on [BloodHound](https://github.com/SpecterOps/BloodHound) by SpecterOps
 - ADCS vulnerability research: [Certified Pre-Owned](https://posts.specterops.io/certified-pre-owned-d95910965cd2) by Will Schroeder & Lee Christensen
-
----
-
-<p align="center">
-  Made with :heart: for the security community
-</p>
