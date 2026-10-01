@@ -433,6 +433,12 @@ class SecurityDescriptorParser:
                     elif ace.object_type == ACERights.CERTIFICATE_AUTOENROLLMENT:
                         ace_dict["RightName"] = "AutoEnroll"
                         aces.append(ace_dict.copy())
+                    elif ace.object_type == ACERights.MANAGE_CA:
+                        ace_dict["RightName"] = "ManageCA"
+                        aces.append(ace_dict.copy())
+                    elif ace.object_type == ACERights.MANAGE_CERTIFICATES:
+                        ace_dict["RightName"] = "ManageCertificates"
+                        aces.append(ace_dict.copy())    
                     elif not ace.object_type:
                         ace_dict["RightName"] = "AllExtendedRights"
                         aces.append(ace_dict.copy())
